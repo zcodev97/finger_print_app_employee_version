@@ -12,11 +12,15 @@ import shutil
 import uuid
 from datetime import datetime, timezone, timedelta
 import adafruit_fingerprint
+import urllib.request
+# import base64
+import io
+from PIL import ImageTk, Image
 
 # uart = serial.Serial("/dev/ttyS0", baudrate=57600, timeout=1)
-uart = serial.Serial("COM9", baudrate=57600, timeout=1)
+# uart = serial.Serial("COM9", baudrate=57600, timeout=1)
 
-finger = adafruit_fingerprint.Adafruit_Fingerprint(uart)
+# finger = adafruit_fingerprint.Adafruit_Fingerprint(uart)
 
 ##################################################
 
@@ -44,50 +48,18 @@ def db_connection_select_fingerprint(finger_print_id):
         cur.execute(select_query)
         rows = cur.fetchall()
 
-        emp_uuid, finger_print_id, fullname, description, shift, image, created_at, created_by_id = rows[
+        id, finger_print_id, fullname, description,  image, created_at, created_by_id, user_type_id = rows[
             0]
 
+        get_user_type_query = f"Select title FROM fingerprintapp_usertype where id = '{user_type_id}';"
+        cur.execute(get_user_type_query)
+        user_type_title = cur.fetchall()
+        user_type_title = list(user_type_title[0])
         conn.commit()
 
-        select_checks_query = f"Select * FROM fingerprintapp_checkincheckout where employee_id = '{emp_uuid}' and date_trunc('day', created_at) = current_date order by created_at;"
-        cur.execute(select_checks_query)
-        checks = cur.fetchall()
-
-        new_uuid = uuid.uuid4()
-        created_at = datetime.now(timezone.utc)
-
-        if (len(checks) > 0):
-            reading_id, created_at_reading, entrance_type, employee_id, duration = checks[-1]
-
-            time_difference = created_at - created_at_reading
-            if time_difference.total_seconds() > 10:
-                if entrance_type == 'check in':
-                    new_duration = time_difference.total_seconds()
-                    new_entrance_type = 'check out'
-                    insert_query = "INSERT INTO fingerprintapp_checkincheckout (id, employee_id,created_at,entrance_type,duration) VALUES (%s,%s,%s,%s,%s);"
-                    cur.execute(insert_query, (str(new_uuid), emp_uuid,
-                                created_at, new_entrance_type, new_duration))
-                else:
-                    new_duration = 0
-                    new_entrance_type = 'check in'
-                    insert_query = "INSERT INTO fingerprintapp_checkincheckout (id, employee_id,created_at,entrance_type,duration) VALUES (%s,%s,%s,%s,%s);"
-                    cur.execute(insert_query, (str(new_uuid), emp_uuid,
-                                created_at, new_entrance_type, new_duration))
-            else:
-                messagebox.showerror("Error", "Complete Your Session !.")
-                return False
-
-        else:
-            duration = 0
-            new_entrance_type = 'check in'
-            insert_query = "INSERT INTO fingerprintapp_checkincheckout (id, employee_id,created_at,entrance_type,duration) VALUES (%s,%s,%s,%s,%s);"
-            cur.execute(insert_query, (str(new_uuid), emp_uuid,
-                        created_at, new_entrance_type, duration))
-        conn.commit()
         fingerprint_data = list(rows[0])
-        fingerprint_data.insert(len(fingerprint_data), new_entrance_type)
         fingerprint_data = tuple(fingerprint_data)
-        return fingerprint_data
+        return [fingerprint_data, user_type_title[0]]
 
     except Exception as error:
         print(error)
@@ -192,88 +164,103 @@ class FingerprintApp(tk.Tk):
         self.count = 0  # Counter in seconds
         self.running = False  # Track if the counter is running
 
+        # Create a container frame
+        container = ttk.Frame(self)
+        container.grid(row=0, column=0, padx=10, pady=10, columnspan=3)
+
         scan_button_style = ttk.Style()
         scan_button_style.configure("Big.TButton",
                                     font=("Arial", 20, 'bold'),
                                     background="sky blue",
                                     foreground="black")
 
-        # Step 2: Apply the style to your button
+        self.exit_button_style = ttk.Style()
+        self.exit_button_style.configure("TButton",
+                                         font=("Arial", 20, 'bold'),
+                                         background="red",
+                                         foreground="black")
 
-        # Using grid to organize layout
+        # First Column
+        self.emp_image1 = ttk.Label(self, borderwidth=2, text=datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+                                    font=(
+                                        "Arial", 18),
+                                    relief="solid", padding=2, background="white")
 
-        # Create frames for each row
-        # for i in range(3):
-        #     frame = ttk.Frame(self, padding="10")
-        #     frame.grid(row=i, column=0, sticky=(tk.W, tk.E))
-        #
-        #     # Add image (using a label as a placeholder)
-        #     img_label = ttk.Label(frame, text="Image {}".format(i + 1))
-        #     img_label.grid(row=0, column=0, rowspan=2)
-        #
-        #     # Add check_in and check_out labels and values
-        #     check_in_label = ttk.Label(frame, text="Check_in:")
-        #     check_in_label.grid(row=0, column=1)
-        #     check_in_value = ttk.Label(frame, text="Value {}".format(i + 1))
-        #     check_in_value.grid(row=0, column=2)
-        #
-        #     check_out_label = ttk.Label(frame, text="Check_out:")
-        #     check_out_label.grid(row=1, column=1)
-        #     check_out_value = ttk.Label(frame, text="Value {}".format(i + 1))
-        #     check_out_value.grid(row=1, column=2)
-        #
-        #     # Add name and description
-        #     name_label = ttk.Label(frame, text="Name:")
-        #     name_label.grid(row=0, column=3)
-        #     description_label = ttk.Label(frame, text="Description:")
-        #     description_label.grid(row=1, column=3)
+        self.emp_image1.grid(row=0, column=0, rowspan=2,
+                             padx=2, pady=2)
 
-        # # Left Side for Image
-        # self.emp_image_1 = ttk.Label(
-        #     self, background="white", borderwidth=1, relief="solid")
-        # self.emp_image_1.grid(row=0, column=0, rowspan=6, padx=2, pady=2)
-        #
-        # # Left Side for Image
-        # self.emp_image_2 = ttk.Label(self, background="white")
-        # self.emp_image_2.grid(row=1, column=0, rowspan=6, padx=2, pady=4)
-        #
-        # # Left Side for Image
-        # self.emp_image_3 = ttk.Label(self, background="white")
-        # self.emp_image_3.grid(row=2, column=0, rowspan=6, padx=2, pady=6)
+        # Second Column
+        self.emp_name_1 = ttk.Label(self, text="Employee Name.", font=(
+            "Arial", 22, 'bold'), foreground="black", background="white", anchor="center", justify="center")
+        self.emp_name_1.grid(row=0, column=1, pady=2, sticky="nsew")
+        self.emp_desc_1 = ttk.Label(self, text="Employee Description", font=(
+            "Arial", 18), foreground="black", background="white", anchor="center", justify="center")
+        self.emp_desc_1.grid(row=1, column=1, pady=2, sticky="nsew")
 
-        # Left Side for Image
-        self.emp_image = ttk.Label(self, background="white")
-        self.emp_image.grid(row=0, column=0, rowspan=6, padx=2, pady=2)
+        self.check_in_1 = ttk.Label(self, text="Check In", font=(
+            "Arial", 22, 'bold'), foreground="black", background="white", anchor="center", justify="center")
+        self.check_in_1.grid(row=0, column=2, pady=2, sticky="nsew")
+        self.check_out_1 = ttk.Label(self, text="Check Out", font=(
+            "Arial", 18), foreground="black", background="white", anchor="center", justify="center")
+        self.check_out_1.grid(row=1, column=2, pady=2, sticky="nsew")
+
+        #
+        self.emp_image2 = ttk.Label(self, borderwidth=2, text='Trainer Image..',
+                                    font=(
+                                        "Arial", 18),
+                                    relief="solid", padding=50, background="white")
+        self.emp_image2.grid(row=2, column=0, rowspan=2,
+                             padx=2, pady=2)
+
+        self.emp_name_2 = ttk.Label(self, text="Employee Name.", font=(
+            "Arial", 22, 'bold'), foreground="black", background="white", anchor="center", justify="center")
+        self.emp_name_2.grid(row=2, column=1, pady=2, sticky="nsew")
+        self.emp_desc_2 = ttk.Label(self, text="Employee Description", font=(
+            "Arial", 18), foreground="black", background="white", anchor="center", justify="center")
+        self.emp_desc_2.grid(row=3, column=1, pady=2, sticky="nsew")
+
+        self.check_in_2 = ttk.Label(self, text="Employee Name.", font=(
+            "Arial", 22, 'bold'), foreground="black", background="white", anchor="center", justify="center")
+        self.check_in_2.grid(row=2, column=2, pady=2, sticky="nsew")
+        self.check_out_2 = ttk.Label(self, text="Employee Description", font=(
+            "Arial", 18), foreground="black", background="white", anchor="center", justify="center")
+        self.check_out_2.grid(row=3, column=2, pady=2, sticky="nsew")
+        #
+        self.emp_image3 = ttk.Label(
+            self, borderwidth=2, text='Trainee Image..',
+            font=(
+                "Arial", 18),
+            relief="solid", padding=50,  background="white")
+        self.emp_image3.grid(row=4, column=0, rowspan=2,
+                             padx=2, pady=2)
+
+        self.emp_name_3 = ttk.Label(self, text="Employee Name.", font=(
+            "Arial", 22, 'bold'), foreground="black", background="white", anchor="center", justify="center")
+        self.emp_name_3.grid(row=4, column=1, pady=2, sticky="nsew")
+        self.emp_desc_3 = ttk.Label(self, text="Employee Description", font=(
+            "Arial", 18), foreground="black", background="white", anchor="center", justify="center")
+        self.emp_desc_3.grid(row=5, column=1, pady=2, sticky="nsew")
+
+        self.check_in_3 = ttk.Label(self, text="Employee Name.", font=(
+            "Arial", 22, 'bold'), foreground="black", background="white", anchor="center", justify="center")
+        self.check_in_3.grid(row=4, column=2, pady=2, sticky="nsew")
+        self.check_out_3 = ttk.Label(self, text="Employee Description", font=(
+            "Arial", 18), foreground="black", background="white", anchor="center", justify="center")
+        self.check_out_3.grid(row=5, column=2, pady=2, sticky="nsew")
+
         # Right Side for Other Content
         self.find_button = ttk.Button(
-            self, text="SCAN", command=self.find, style="Big.TButton")
-        self.find_button.grid(row=0, column=1, pady=10, sticky="nsew")
-        self.entrance_title = ttk.Label(self, text="Entrance Type.",
-                                        font=("Arial", 22, 'bold'),
-                                        foreground="black",
-                                        background="white",
-                                        anchor="center",
-                                        justify="center")
-        self.entrance_title.grid(row=1, column=1, pady=10, sticky="nsew")
-        self.title_label = ttk.Label(self, text="Employee Name.", font=("Arial", 22, 'bold'), foreground="black", background="white",
-                                     anchor="center",
-                                     justify="center")
-        self.title_label.grid(row=2, column=1, pady=10, sticky="nsew")
-        self.description_label = ttk.Label(self, text="Employee Description", font=("Arial", 18), foreground="black", background="white",
-                                           anchor="center",
-                                           justify="center")
-        self.description_label.grid(row=3, column=1, pady=10, sticky="nsew")
-        self.time_display = ttk.Label(self, text="00:00:00", font=("Arial", 24), foreground="black", background="white",
-                                      anchor="center",
-                                      justify="center")
-        self.time_display.grid(row=4, column=1, pady=30, sticky="nsew")
+            self, text="SCAN", command=self.find, style="Big.TButton", padding=10)
+        self.find_button.grid(row=6, column=1, pady=10, padx=2, sticky="nsew")
+
         self.exit_btn = ttk.Button(
-            self, text="Exit", command=self.exit, style="Big.TButton")
-        self.exit_btn.grid(row=5, column=1, pady=10, sticky="nsew")
+            self, text="Exit", command=self.exit, style="TButton", padding=10)
+        self.exit_btn.grid(row=6, column=2, pady=10, padx=2, sticky="nsew")
 
         # Configure the column weights to distribute space
-        self.grid_columnconfigure(0, weight=2)  # Image column
-        self.grid_columnconfigure(1, weight=2)  # Content column
+        self.grid_columnconfigure(0, weight=2)
+        self.grid_columnconfigure(1, weight=2)
+        self.grid_columnconfigure(2, weight=2)
 
         # Configure the row weights
         for i in range(6):
@@ -308,23 +295,51 @@ class FingerprintApp(tk.Tk):
             if fingerprint_info[0] == False:
                 messagebox.showerror("Error", fingerprint_info[1])
                 return
-            uuid, finger_print_id, fullname, description, shift, image, created_at, created_by_id, new_entrance_type = fingerprint_info
-            self.title_label.config(text=fullname)
-            self.description_label.config(text=description)
-            self.emp_image_path_after_scan = image
-            if (self.emp_image_path_after_scan != ''):
-                image = Image.open('../../../media/' +
-                                   self.emp_image_path_after_scan)
-                image = image.resize((400, 400))  # Resize to 300x300 pixels
-                self.photo = ImageTk.PhotoImage(image)
-                self.emp_image.config(image=self.photo)
-            if new_entrance_type == 'check in':
-                self.entrance_title.config(text="Checked In")
-                self.start()
-            else:
-                self.entrance_title.config(text="Checked Out")
-                self.stop()
-           # messagebox.showinfo("Detected", f"Detected #{finger.finger_id} with confidence {finger.confidence}")
+            id, finger_print_id, fullname, description, image, created_at, created_by_id, user_type_id = fingerprint_info[
+                0]
+            user_type = fingerprint_info[1]
+            if user_type == 'Examiner':
+                self.emp_name_1.config(text=fullname)
+                self.emp_desc_1.config(text=description)
+                with urllib.request.urlopen('http://127.0.0.1:8000/media' + image) as u:
+                    raw_data = u.read()
+                    image = Image.open(io.BytesIO(raw_data))
+                    # Resize the image
+                    new_width = 200
+                    new_height = 200
+                    resized_image = image.resize((new_width, new_height))
+                    # Convert the resized image to PhotoImage
+                    self.image = ImageTk.PhotoImage(resized_image)
+                    # Set the image to the label
+                    self.emp_image1.config(image=self.image)
+            if user_type == 'Trainer':
+                self.emp_name_2.config(text=fullname)
+                self.emp_desc_2.config(text=description)
+                with urllib.request.urlopen('http://127.0.0.1:8000/media' + image) as u:
+                    raw_data = u.read()
+                    image = Image.open(io.BytesIO(raw_data))
+                    # Resize the image
+                    new_width = 200
+                    new_height = 200
+                    resized_image = image.resize((new_width, new_height))
+                    # Convert the resized image to PhotoImage
+                    self.image = ImageTk.PhotoImage(resized_image)
+                    # Set the image to the label
+                    self.emp_image2.config(image=self.image)
+            # trainee
+            self.emp_name_3.config(text=fullname)
+            self.emp_desc_3.config(text=description)
+            with urllib.request.urlopen('http://127.0.0.1:8000/media' + image) as u:
+                raw_data = u.read()
+                image = Image.open(io.BytesIO(raw_data))
+                # Resize the image
+                new_width = 200
+                new_height = 200
+                resized_image = image.resize((new_width, new_height))
+                # Convert the resized image to PhotoImage
+                self.image = ImageTk.PhotoImage(resized_image)
+                # Set the image to the label
+                self.emp_image3.config(image=self.image)
         else:
             messagebox.showerror("Error", "Finger not found.")
 
