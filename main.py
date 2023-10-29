@@ -25,6 +25,66 @@ from PIL import ImageTk, Image
 ##################################################
 
 
+def insert_data_check_in(user_id, time):
+
+    try:
+
+        # Database connection parameters
+        dbname = 'test'
+        user = 'test'
+        password = 'test'
+        host = 'localhost'
+        port = '5432'  # Typically 5432 for PostgreSQL
+        conn = psycopg2.connect(
+            dbname=dbname,
+            user=user,
+            password=password,
+            host=host,
+            port=port
+        )
+        cur = conn.cursor()
+        insert_query = f"INSERT INTO fingerprintapp_checkin (user_id, created_at) VALUES ('{user_id}', '{time}');"
+        cur.execute(insert_query)
+        conn.commit()
+
+    except Exception as error:
+        print(error)
+        return [False, error]
+    finally:
+        cur.close()
+        conn.close()
+
+
+def insert_data_check_out(user_id, time):
+
+    try:
+
+        # Database connection parameters
+        dbname = 'test'
+        user = 'test'
+        password = 'test'
+        host = 'localhost'
+        port = '5432'  # Typically 5432 for PostgreSQL
+        conn = psycopg2.connect(
+            dbname=dbname,
+            user=user,
+            password=password,
+            host=host,
+            port=port
+        )
+        cur = conn.cursor()
+        insert_query = f"INSERT INTO fingerprintapp_checkout (user_id, created_at) VALUES ('{user_id}', '{time}');"
+        cur.execute(insert_query)
+        conn.commit()
+
+    except Exception as error:
+        print(error)
+        return [False, error]
+    finally:
+        cur.close()
+        conn.close()
+
+
 def db_connection_select_fingerprint(finger_print_id):
 
     try:
@@ -153,6 +213,9 @@ class FingerprintApp(tk.Tk):
 
         self.image_name_with_extension = ''
         self.emp_image_path_after_scan = ''
+        self.examiner_checked_in = False
+        self.trainer_checked_in = False
+        self.trainee_checked_in = False
         self.screen_width = self.winfo_screenwidth()
         self.screen_height = self.winfo_screenheight()
         self.geometry(f"{self.screen_width}x{self.screen_height}")
@@ -181,7 +244,7 @@ class FingerprintApp(tk.Tk):
                                          foreground="black")
 
         # First Column
-        self.emp_image1 = ttk.Label(self, borderwidth=2, text=datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+        self.emp_image1 = ttk.Label(self, borderwidth=2, text="Examiner Image...",
                                     font=(
                                         "Arial", 18),
                                     relief="solid", padding=2, background="white")
@@ -289,6 +352,9 @@ class FingerprintApp(tk.Tk):
         self.destroy()
 
     def find(self):
+        current_utc_time = datetime.utcnow().strftime("%Y-%m-%d %I:%M %p")
+        self.check_in_1.config(
+            text='Check In At: ' + current_utc_time)
         if get_fingerprint():
             fingerprint_info = db_connection_select_fingerprint(
                 finger.finger_id)
@@ -299,22 +365,32 @@ class FingerprintApp(tk.Tk):
                 0]
             user_type = fingerprint_info[1]
             if user_type == 'Examiner':
-                self.emp_name_1.config(text=fullname)
-                self.emp_desc_1.config(text=description)
-                with urllib.request.urlopen('http://127.0.0.1:8000/media' + image) as u:
-                    raw_data = u.read()
-                    image = Image.open(io.BytesIO(raw_data))
-                    # Resize the image
-                    new_width = 200
-                    new_height = 200
-                    resized_image = image.resize((new_width, new_height))
-                    # Convert the resized image to PhotoImage
-                    self.image = ImageTk.PhotoImage(resized_image)
-                    # Set the image to the label
-                    self.emp_image1.config(image=self.image)
+                if self.examiner_checked_in == False:
+                    self.emp_name_1.config(text=fullname)
+                    self.emp_desc_1.config(text=description)
+                    self.check_in_1.config(
+                        text='Check In At: ' + current_utc_time)
+                    with urllib.request.urlopen('http://127.0.0.1:8000/media' + image) as u:
+                        raw_data = u.read()
+                        image = Image.open(io.BytesIO(raw_data))
+                        # Resize the image
+                        new_width = 200
+                        new_height = 200
+                        resized_image = image.resize((new_width, new_height))
+                        # Convert the resized image to PhotoImage
+                        self.image = ImageTk.PhotoImage(resized_image)
+                        # Set the image to the label
+                        self.emp_image1.config(image=self.image)
+                        insert_data_check_in(id, current_utc_time)
+                        self.examiner_checked_in = True
+                else:
+                    insert_data_check_out(id, current_utc_time)
+                    self.examiner_checked_in = False
             if user_type == 'Trainer':
                 self.emp_name_2.config(text=fullname)
                 self.emp_desc_2.config(text=description)
+                self.check_in_2.config(
+                    text='Check In At: ' + datetime.now().strftime("%Y-%m-%d %I:%M %p"))
                 with urllib.request.urlopen('http://127.0.0.1:8000/media' + image) as u:
                     raw_data = u.read()
                     image = Image.open(io.BytesIO(raw_data))
@@ -329,6 +405,8 @@ class FingerprintApp(tk.Tk):
             # trainee
             self.emp_name_3.config(text=fullname)
             self.emp_desc_3.config(text=description)
+            self.check_in_3.config(
+                text='Check In At: ' + datetime.now().strftime("%Y-%m-%d %I:%M %p"))
             with urllib.request.urlopen('http://127.0.0.1:8000/media' + image) as u:
                 raw_data = u.read()
                 image = Image.open(io.BytesIO(raw_data))
